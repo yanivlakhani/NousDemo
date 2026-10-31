@@ -1,0 +1,65 @@
+name: Deploy to Modal
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: modal-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-deploy:
+    name: Verify and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - working-directory: backend
+        run: uv sync --extra dev --locked
+      - working-directory: backend
+        run: uv run pytest -q
+
+      - name: Install Modal CLI
+        run: uv tool install modal==1.2.6
+      - name: Apply database migrations
+        run: modal run modal_app.py::migrate
+      - name: Deploy production app
+        run: modal deploy modal_app.py
+
+      - name: Verify production health
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            response="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 20 https://htsaustin--nous-web.us-east.modal.run/health || true)"
+            if jq -e '.ok == true and .database == true and .voice_provider == "elevenlabs" and .agent_provider == "anthropic"' <<<"$response" >/dev/null 2>&1; then
+              echo "$response"
+              exit 0
+            fi
+            echo "Production is not ready yet (attempt $attempt/12); retrying in 5 seconds"
+            sleep 5
+          done
+          echo "$response"
+          echo "::error::Production health did not become ready"
+          exit 1

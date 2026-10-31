@@ -1,0 +1,12 @@
+[project]
+name = "nous-api"
+version = "0.1.0"
+description = "API for long-running patient pathway caseworkers"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.34", "httpx>=0.28", "pydantic-settings>=2.8", "elevenlabs>=2,<3", "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4", "alembic>=1.14,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", ".."]
